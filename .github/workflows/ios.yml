@@ -65,6 +65,8 @@ jobs:
         run: |
           set -euo pipefail
           xcodegen generate
+          test -n "$(/usr/libexec/PlistBuddy -c 'Print :NSCameraUsageDescription' AirFerryIOS/Resources/Info.plist)"
+          /usr/libexec/PlistBuddy -c 'Print :UILaunchScreen:UIImageName' AirFerryIOS/Resources/Info.plist | grep -qx 'LaunchLogo'
           xcodebuild -project AirFerryIOS.xcodeproj -list
 
       - name: Compile iPhone Release app without signing
