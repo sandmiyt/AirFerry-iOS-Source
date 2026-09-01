@@ -1,6 +1,6 @@
 # iOS 双端构建与使用
 
-`apps/ios` 是原生 SwiftUI 发送 + 接收应用，最低 iOS 17。发送端选择文件后由共享 Rust 核心生成与网页/Android/Windows 完全相同的 RaptorQ 二进制帧，再用 Core Image 显示连续二维码；接收端使用 AVFoundation + Vision 读取二维码原始二进制载荷，交给同一个 Rust C ABI 恢复、校验和组装。
+`apps/ios` 是原生 SwiftUI 发送 + 接收应用，最低 iOS 17。iOS 26 上使用系统原生 Liquid Glass，旧系统回退到 SwiftUI Material。发送端选择文件后由共享 Rust 核心生成与网页/Android/Windows 完全相同的 RaptorQ 二进制帧，再用 Core Image 显示连续二维码；接收端使用 AVFoundation + Vision 读取二维码原始二进制载荷，交给同一个 Rust C ABI 恢复、校验和组装。
 
 整个传输链路只使用屏幕和相机，不依赖互联网或局域网。接收完成的文件保存在“文件 → 我的 iPhone → AirFerry → 已接收”，应用会自动打开系统预览，也可以直接分享/导出。
 
@@ -34,10 +34,9 @@ Rust 或 Swift 接口改动后再次运行 `./scripts/bootstrap.sh` 即可。只
 
 仓库根目录已包含 `.github/workflows/ios.yml`。把**整个源码目录的内容**上传到 GitHub 仓库根目录（根目录必须直接看到 `Cargo.toml`、`apps/`、`core/` 和 `.github/`），推送后会自动运行；也可以进入 GitHub 的 **Actions → Build iOS (unsigned) → Run workflow** 手动启动。
 
-流程固定使用 `macos-15` 与 Xcode 16.4，并自动完成 Rust Apple targets、XCFramework、XcodeGen 工程和 iPhone Release 构建。成功后在该次运行底部下载 `AirFerry-iOS-unsigned-运行编号`，其中包含：
+流程固定使用 `macos-26` 与 Xcode 26.6，并自动完成 Rust Apple targets、XCFramework、XcodeGen 工程和 iPhone Release 构建。成功后在该次运行底部下载 `AirFerry-iOS-unsigned-运行编号`，压缩包中只包含：
 
 - `AirFerry-unsigned.ipa`
-- `AirFerry-unsigned.sha256`
 
 这个 IPA 用 `CODE_SIGNING_ALLOWED=NO` 构建，作用是确认源码在真实 Xcode/iPhone SDK 下能够编译，并提供未签名产物。**它不能直接安装到普通未越狱 iPhone。**要正常安装，仍需 Apple Developer 证书、与 `local.airferry.ios` 匹配的 provisioning profile，并在 GitHub Secrets 中安全配置签名材料；也可以下载源码后在自己的 Mac/Xcode 中选择 Personal Team 直接真机运行。不要把 `.p12`、证书密码或 provisioning profile 直接提交进仓库。
 

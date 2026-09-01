@@ -20,6 +20,7 @@ targets:
       path: AirFerryIOS/Resources/Info.plist
     settings:
       base:
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         PRODUCT_BUNDLE_IDENTIFIER: local.airferry.ios
         PRODUCT_NAME: AirFerry
         CODE_SIGN_STYLE: Automatic

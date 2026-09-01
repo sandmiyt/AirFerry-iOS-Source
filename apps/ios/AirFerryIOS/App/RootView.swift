@@ -9,18 +9,17 @@ struct RootView: View {
             NavigationStack {
                 SenderView(model: sender)
             }
-            .tabItem { Label("发送", systemImage: "qrcode") }
+            .tabItem { Label("发送", systemImage: "arrow.up.circle.fill") }
 
             NavigationStack {
                 ReceiverView(model: receiver)
             }
-            .tabItem { Label("接收", systemImage: "viewfinder") }
+            .tabItem { Label("接收", systemImage: "viewfinder.circle.fill") }
         }
-        .tint(.indigo)
+        .tint(AirFerryTheme.accent)
     }
 }
 
 #Preview {
     RootView()
 }
-
