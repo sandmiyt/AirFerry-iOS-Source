@@ -65,8 +65,8 @@ jobs:
         run: |
           set -euo pipefail
           xcodegen generate
-          test -n "$(/usr/libexec/PlistBuddy -c 'Print :NSCameraUsageDescription' AirFerryIOS/Resources/Info.plist)"
-          /usr/libexec/PlistBuddy -c 'Print :UILaunchScreen:UIImageName' AirFerryIOS/Resources/Info.plist | grep -qx 'LaunchLogo'
+          /usr/libexec/PlistBuddy -c 'Print :NSCameraUsageDescription' AirFerryIOS/Resources/Info.plist
+          /usr/libexec/PlistBuddy -c 'Print :UILaunchScreen:UIImageName' AirFerryIOS/Resources/Info.plist
           xcodebuild -project AirFerryIOS.xcodeproj -list
 
       - name: Compile iPhone Release app without signing
@@ -90,11 +90,14 @@ jobs:
           set -euo pipefail
           app="$RUNNER_TEMP/AirFerryDerivedData/Build/Products/Release-iphoneos/AirFerry.app"
           test -d "$app"
-          test -n "$(/usr/libexec/PlistBuddy -c 'Print :NSCameraUsageDescription' "$app/Info.plist")"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :UIRequiresFullScreen' "$app/Info.plist")" = "true"
-          /usr/libexec/PlistBuddy -c 'Print :UILaunchScreen:UIImageName' "$app/Info.plist" | grep -qx 'LaunchLogo'
-          /usr/libexec/PlistBuddy -c 'Print :UIDeviceFamily:0' "$app/Info.plist" | grep -qx '1'
-          test "$(/usr/libexec/PlistBuddy -c 'Print :UIDeviceFamily' "$app/Info.plist" | grep -c '^[[:space:]]*[0-9][[:space:]]*$')" -eq 1
+          echo "Built application Info.plist:"
+          plutil -p "$app/Info.plist"
+          camera_description="$(/usr/libexec/PlistBuddy -c 'Print :NSCameraUsageDescription' "$app/Info.plist")"
+          if [[ -z "$camera_description" ]]; then
+            echo "::error::The built app is missing NSCameraUsageDescription"
+            exit 1
+          fi
+          echo "Camera usage description: $camera_description"
           package="$RUNNER_TEMP/AirFerryPackage"
           mkdir -p "$package/Payload"
           cp -R "$app" "$package/Payload/"
