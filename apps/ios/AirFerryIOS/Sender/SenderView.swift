@@ -1,9 +1,13 @@
 import SwiftUI
+import PhotosUI
 import UniformTypeIdentifiers
 
 struct SenderView: View {
     @ObservedObject var model: SenderViewModel
     @State private var showingImporter = false
+    @State private var showingSourceOptions = false
+    @State private var showingPhotoPicker = false
+    @State private var selectedPhotoItem: PhotosPickerItem?
 
     var body: some View {
         Group {
@@ -28,6 +32,25 @@ struct SenderView: View {
             if case .success(let urls) = result, let url = urls.first {
                 model.stage(url)
             }
+        }
+        .photosPicker(
+            isPresented: $showingPhotoPicker,
+            selection: $selectedPhotoItem,
+            matching: .any(of: [.images, .videos]),
+            preferredItemEncoding: .current
+        )
+        .onChange(of: selectedPhotoItem) { _, item in
+            guard let item else { return }
+            importPhoto(item)
+        }
+        .confirmationDialog(
+            "选择来源",
+            isPresented: $showingSourceOptions,
+            titleVisibility: .visible
+        ) {
+            Button("文件") { showingImporter = true }
+            Button("图库") { showingPhotoPicker = true }
+            Button("取消", role: .cancel) {}
         }
     }
 
@@ -105,7 +128,7 @@ struct SenderView: View {
 
     private var fileCard: some View {
         Button {
-            showingImporter = true
+            showingSourceOptions = true
         } label: {
             HStack(spacing: 15) {
                 Image(systemName: model.filename.isEmpty ? "doc.badge.plus" : "doc.fill")
@@ -260,6 +283,32 @@ struct SenderView: View {
 
     private var fileSizeText: String {
         ByteCountFormatter.string(fromByteCount: Int64(model.fileSize), countStyle: .file)
+    }
+
+    private func importPhoto(_ item: PhotosPickerItem) {
+        let contentType = item.supportedContentTypes.first { $0.conforms(to: .movie) }
+            ?? item.supportedContentTypes.first { $0.conforms(to: .image) }
+        let isMovie = contentType?.conforms(to: .movie) == true
+        let prefix = isMovie ? "视频" : "照片"
+        let fallbackExtension = isMovie ? "mov" : "jpg"
+        let filenameExtension = contentType?.preferredFilenameExtension ?? fallbackExtension
+        let filename = "\(prefix)-\(Int(Date().timeIntervalSince1970)).\(filenameExtension)"
+
+        selectedPhotoItem = nil
+        Task {
+            do {
+                guard let transfer = try await item.loadTransferable(type: PhotoPickerTransfer.self) else {
+                    throw CocoaError(.fileReadUnknown)
+                }
+                model.stage(
+                    transfer.url,
+                    preferredFilename: filename,
+                    removeSourceAfterStaging: true
+                )
+            } catch {
+                model.reportSelectionFailure(error)
+            }
+        }
     }
 }
 

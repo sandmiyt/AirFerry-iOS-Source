@@ -87,7 +87,7 @@ struct ReceiverView: View {
             }
         }
         .frame(maxWidth: 560)
-        .aspectRatio(3.0 / 4.0, contentMode: .fit)
+        .aspectRatio(9.0 / 16.0, contentMode: .fit)
         .background(Color.black.opacity(0.88))
         .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
         .overlay {

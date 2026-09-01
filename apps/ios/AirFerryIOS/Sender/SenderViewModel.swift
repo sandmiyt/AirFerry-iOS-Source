@@ -88,12 +88,21 @@ final class SenderViewModel: ObservableObject {
 
     var isPlaying: Bool { phase == .playing }
 
-    func stage(_ source: URL) {
+    func stage(
+        _ source: URL,
+        preferredFilename: String? = nil,
+        removeSourceAfterStaging: Bool = false
+    ) {
         playTask?.cancel()
         phase = .staging
         Task {
             let scoped = source.startAccessingSecurityScopedResource()
-            defer { if scoped { source.stopAccessingSecurityScopedResource() } }
+            defer {
+                if scoped { source.stopAccessingSecurityScopedResource() }
+                if removeSourceAfterStaging {
+                    try? FileManager.default.removeItem(at: source.deletingLastPathComponent())
+                }
+            }
             do {
                 let values = try source.resourceValues(forKeys: [
                     .fileSizeKey,
@@ -103,7 +112,7 @@ final class SenderViewModel: ObservableObject {
                 let directory = FileManager.default.temporaryDirectory
                     .appendingPathComponent("AirFerryOutgoing", isDirectory: true)
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-                let name = values.name ?? source.lastPathComponent
+                let name = preferredFilename ?? values.name ?? source.lastPathComponent
                 let destination = directory
                     .appendingPathComponent(UUID().uuidString, isDirectory: true)
                     .appendingPathComponent(name)
@@ -123,6 +132,10 @@ final class SenderViewModel: ObservableObject {
                 phase = .failed("读取文件失败：\(error.localizedDescription)")
             }
         }
+    }
+
+    func reportSelectionFailure(_ error: Error) {
+        phase = .failed("导入所选内容失败：\(error.localizedDescription)")
     }
 
     func begin() {

@@ -44,45 +44,73 @@ final class CameraScanner: NSObject, ObservableObject, AVCaptureVideoDataOutputS
     private func configureAndRun() {
         captureQueue.async { [weak self] in
             guard let self else { return }
-            if session.inputs.isEmpty {
-                session.beginConfiguration()
-                session.sessionPreset = .hd1920x1080
-                defer { session.commitConfiguration() }
-                guard
-                    let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
-                    let input = try? AVCaptureDeviceInput(device: camera),
-                    session.canAddInput(input)
-                else {
-                    DispatchQueue.main.async { self.state = .failed("无法打开后置摄像头。") }
-                    return
-                }
-                session.addInput(input)
-                let output = AVCaptureVideoDataOutput()
-                output.alwaysDiscardsLateVideoFrames = true
-                output.videoSettings = [
-                    kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
-                ]
-                output.setSampleBufferDelegate(self, queue: visionQueue)
-                guard session.canAddOutput(output) else {
-                    DispatchQueue.main.async { self.state = .failed("无法创建扫码输出。") }
-                    return
-                }
-                session.addOutput(output)
-                if let connection = output.connection(with: .video), connection.isVideoRotationAngleSupported(90) {
-                    connection.videoRotationAngle = 90
-                }
-                try? camera.lockForConfiguration()
-                if camera.isFocusModeSupported(.continuousAutoFocus) {
-                    camera.focusMode = .continuousAutoFocus
-                }
-                if camera.isExposureModeSupported(.continuousAutoExposure) {
-                    camera.exposureMode = .continuousAutoExposure
-                }
-                camera.unlockForConfiguration()
+            if let message = configureSessionIfNeeded() {
+                DispatchQueue.main.async { self.state = .failed(message) }
+                return
             }
             if !session.isRunning { session.startRunning() }
-            DispatchQueue.main.async { self.state = .running }
+            let isRunning = session.isRunning
+            DispatchQueue.main.async {
+                self.state = isRunning
+                    ? .running
+                    : .failed("相机启动失败，请返回后重试。")
+            }
         }
+    }
+
+    private func configureSessionIfNeeded() -> String? {
+        guard session.inputs.isEmpty || session.outputs.isEmpty else { return nil }
+
+        session.beginConfiguration()
+        defer { session.commitConfiguration() }
+
+        session.inputs.forEach(session.removeInput)
+        session.outputs.forEach(session.removeOutput)
+        if session.canSetSessionPreset(.hd1920x1080) {
+            session.sessionPreset = .hd1920x1080
+        } else {
+            session.sessionPreset = .high
+        }
+
+        guard
+            let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
+            let input = try? AVCaptureDeviceInput(device: camera),
+            session.canAddInput(input)
+        else {
+            return "无法打开后置摄像头。"
+        }
+
+        session.addInput(input)
+        let output = AVCaptureVideoDataOutput()
+        output.alwaysDiscardsLateVideoFrames = true
+        output.videoSettings = [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
+        ]
+        output.setSampleBufferDelegate(self, queue: visionQueue)
+        guard session.canAddOutput(output) else {
+            session.removeInput(input)
+            return "无法创建扫码输出。"
+        }
+
+        session.addOutput(output)
+        if let connection = output.connection(with: .video),
+           connection.isVideoRotationAngleSupported(90) {
+            connection.videoRotationAngle = 90
+        }
+
+        do {
+            try camera.lockForConfiguration()
+            defer { camera.unlockForConfiguration() }
+            if camera.isFocusModeSupported(.continuousAutoFocus) {
+                camera.focusMode = .continuousAutoFocus
+            }
+            if camera.isExposureModeSupported(.continuousAutoExposure) {
+                camera.exposureMode = .continuousAutoExposure
+            }
+        } catch {
+            // 对焦锁失败不影响相机采集，保留系统默认配置继续启动。
+        }
+        return nil
     }
 
     func captureOutput(
