@@ -32,7 +32,12 @@
     <false/>
   </dict>
   <key>UILaunchScreen</key>
-  <dict/>
+  <dict>
+    <key>UIImageName</key>
+    <string>LaunchLogo</string>
+    <key>UIImageRespectsSafeAreaInsets</key>
+    <true/>
+  </dict>
   <key>UIFileSharingEnabled</key>
   <true/>
   <key>UIRequiresFullScreen</key>
@@ -40,11 +45,6 @@
   <key>UISupportedInterfaceOrientations</key>
   <array>
     <string>UIInterfaceOrientationPortrait</string>
-  </array>
-  <key>UISupportedInterfaceOrientations~ipad</key>
-  <array>
-    <string>UIInterfaceOrientationPortrait</string>
-    <string>UIInterfaceOrientationPortraitUpsideDown</string>
   </array>
 </dict>
 </plist>

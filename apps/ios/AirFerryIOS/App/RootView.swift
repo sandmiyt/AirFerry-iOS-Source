@@ -17,6 +17,8 @@ struct RootView: View {
             .tabItem { Label("接收", systemImage: "viewfinder.circle.fill") }
         }
         .tint(AirFerryTheme.accent)
+        .toolbarBackground(.ultraThinMaterial, for: .tabBar)
+        .toolbarBackground(.visible, for: .tabBar)
     }
 }
 

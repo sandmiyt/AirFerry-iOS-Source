@@ -18,7 +18,19 @@ final class CameraScanner: NSObject, ObservableObject, AVCaptureVideoDataOutputS
 
     private let captureQueue = DispatchQueue(label: "local.airferry.camera.capture", qos: .userInitiated)
     private let visionQueue = DispatchQueue(label: "local.airferry.camera.vision", qos: .userInitiated)
-    private var processing = false
+    private var isConfigured = false
+    private var lastScanUptime = 0.0
+    private var consecutiveVisionFailures = 0
+    private lazy var barcodeRequest: VNDetectBarcodesRequest = {
+        let request = VNDetectBarcodesRequest()
+        request.symbologies = [.qr]
+        if #available(iOS 26.0, *) {
+            // iOS 26 的部分 iPhone 16 设备存在 Vision/ANE 条码模型失效问题。
+            // 二维码解码量不大，接收页优先使用 CPU，避免系统模型异常拖垮扫码链路。
+            request.usesCPUOnly = true
+        }
+        return request
+    }()
 
     func start() {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
@@ -59,15 +71,15 @@ final class CameraScanner: NSObject, ObservableObject, AVCaptureVideoDataOutputS
     }
 
     private func configureSessionIfNeeded() -> String? {
-        guard session.inputs.isEmpty || session.outputs.isEmpty else { return nil }
+        guard !isConfigured else { return nil }
 
         session.beginConfiguration()
         defer { session.commitConfiguration() }
 
         session.inputs.forEach(session.removeInput)
         session.outputs.forEach(session.removeOutput)
-        if session.canSetSessionPreset(.hd1920x1080) {
-            session.sessionPreset = .hd1920x1080
+        if session.canSetSessionPreset(.hd1280x720) {
+            session.sessionPreset = .hd1280x720
         } else {
             session.sessionPreset = .high
         }
@@ -93,10 +105,6 @@ final class CameraScanner: NSObject, ObservableObject, AVCaptureVideoDataOutputS
         }
 
         session.addOutput(output)
-        if let connection = output.connection(with: .video),
-           connection.isVideoRotationAngleSupported(90) {
-            connection.videoRotationAngle = 90
-        }
 
         do {
             try camera.lockForConfiguration()
@@ -110,6 +118,7 @@ final class CameraScanner: NSObject, ObservableObject, AVCaptureVideoDataOutputS
         } catch {
             // 对焦锁失败不影响相机采集，保留系统默认配置继续启动。
         }
+        isConfigured = true
         return nil
     }
 
@@ -118,22 +127,37 @@ final class CameraScanner: NSObject, ObservableObject, AVCaptureVideoDataOutputS
         didOutput sampleBuffer: CMSampleBuffer,
         from connection: AVCaptureConnection
     ) {
-        guard !processing else { return }
-        processing = true
-        let request = VNDetectBarcodesRequest { [weak self] request, _ in
-            defer { self?.processing = false }
-            guard let observations = request.results as? [VNBarcodeObservation] else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now - lastScanUptime >= 1.0 / 12.0,
+              let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer)
+        else { return }
+        lastScanUptime = now
+
+        autoreleasepool {
+            do {
+                let handler = VNImageRequestHandler(
+                    cvPixelBuffer: pixelBuffer,
+                    orientation: .right,
+                    options: [:]
+                )
+                try handler.perform([barcodeRequest])
+                consecutiveVisionFailures = 0
+            } catch {
+                consecutiveVisionFailures += 1
+                if consecutiveVisionFailures == 24 {
+                    DispatchQueue.main.async { [weak self] in
+                        self?.state = .failed("系统扫码引擎连续失败，请重启 iPhone 后再试。")
+                    }
+                }
+                return
+            }
+
+            guard let observations = barcodeRequest.results as? [VNBarcodeObservation] else { return }
             for observation in observations where observation.symbology == .qr {
                 if let payload = observation.payloadData, !payload.isEmpty {
-                    self?.onPayload?(payload)
+                    onPayload?(payload)
                 }
             }
-        }
-        request.symbologies = [.qr]
-        do {
-            try VNImageRequestHandler(cmSampleBuffer: sampleBuffer, orientation: .up).perform([request])
-        } catch {
-            processing = false
         }
     }
 }
@@ -153,5 +177,13 @@ struct CameraPreview: UIViewRepresentable {
     final class PreviewView: UIView {
         override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
         var previewLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            if let connection = previewLayer.connection,
+               connection.isVideoRotationAngleSupported(90) {
+                connection.videoRotationAngle = 90
+            }
+        }
     }
 }

@@ -24,8 +24,8 @@ struct ReceiverView: View {
                 }
                 .frame(maxWidth: 720)
                 .frame(maxWidth: .infinity)
-                .padding(.horizontal, 18)
-                .padding(.top, 12)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
                 .padding(.bottom, 34)
             }
         }
@@ -86,8 +86,8 @@ struct ReceiverView: View {
                     .overlay { ScannerFrame() }
             }
         }
-        .frame(maxWidth: 560)
-        .aspectRatio(9.0 / 16.0, contentMode: .fit)
+        .frame(maxWidth: 520)
+        .aspectRatio(1, contentMode: .fit)
         .background(Color.black.opacity(0.88))
         .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
         .overlay {

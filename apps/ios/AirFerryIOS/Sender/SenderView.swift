@@ -88,8 +88,8 @@ struct SenderView: View {
                 }
                 .frame(maxWidth: 680)
                 .frame(maxWidth: .infinity)
-                .padding(.horizontal, 20)
-                .padding(.top, 18)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
                 .padding(.bottom, 32)
             }
         }
