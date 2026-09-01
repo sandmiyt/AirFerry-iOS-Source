@@ -1,0 +1,62 @@
+[workspace]
+resolver = "2"
+members = [
+    "core/raptorq-core",
+    "core/qr-protocol",
+    "core/transfer-engine",
+]
+
+[workspace.package]
+version = "1.2.8"
+edition = "2021"
+rust-version = "1.75"
+license = "MIT"
+repository = "https://github.com/UR-SillyB/AirFerry"
+description = "Fully offline optical file transfer: browser sender <-> Android scanner via QR video stream."
+
+[workspace.dependencies]
+# Internal crates
+raptorq-core = { path = "core/raptorq-core" }
+qr-protocol = { path = "core/qr-protocol" }
+transfer-engine = { path = "core/transfer-engine" }
+
+# Common shared deps (pinned for reproducible builds)
+crc32fast = "1.4"
+sha2 = "0.10"
+thiserror = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.release.package.transfer-engine]
+opt-level = 3
+
+# The optical hot path is not just transfer-engine: every frame touches
+# raptorq-core (encode/decode), qr-protocol (CRC + QR render via the `fast_qr`
+# and `crc32fast` crates), and the upstream `raptorq` solver. Building these at
+# opt-level="z" (the workspace default, chosen for small WASM/APK size) leaves a
+# lot of scalar throughput on the table on the per-frame path — noticeable on
+# low-end Android and in the WASM render loop. Promote the whole hot path to
+# opt-level=3; the size cost is modest and these crates are never the dominant
+# contributor to binary size anyway.
+[profile.release.package.raptorq-core]
+opt-level = 3
+[profile.release.package.qr-protocol]
+opt-level = 3
+[profile.release.package.raptorq]
+opt-level = 3
+[profile.release.package.fast_qr]
+opt-level = 3
+[profile.release.package.crc32fast]
+opt-level = 3
+
+# Vendored fast_qr with fixed-mask fast path (skips the 8-mask evaluation loop
+# when a fixed mask is specified — ~10× QR encode speedup for AirFerry).
+[patch.crates-io]
+fast_qr = { path = "core/qr-protocol/vendor/fast_qr" }

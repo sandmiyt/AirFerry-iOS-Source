@@ -1,0 +1,109 @@
+name: Build iOS (unsigned)
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/ios.yml"
+      - "apps/ios/**"
+      - "core/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-ios:
+    name: Compile unsigned iOS app
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7
+
+      - name: Verify repository layout
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f Cargo.toml
+          test -f apps/ios/project.yml
+          test -f apps/ios/scripts/build-rust-xcframework.sh
+          test -f core/transfer-engine/Cargo.toml
+
+      - name: Install build prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          rustc --version
+          cargo --version
+          rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
+          xcodegen --version
+
+      - name: Build Rust XCFramework
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x apps/ios/scripts/*.sh
+          apps/ios/scripts/build-rust-xcframework.sh
+
+      - name: Generate Xcode project
+        working-directory: apps/ios
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodegen generate
+          xcodebuild -project AirFerryIOS.xcodeproj -list
+
+      - name: Compile iPhone Release app without signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project apps/ios/AirFerryIOS.xcodeproj \
+            -scheme AirFerryIOS \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination "generic/platform=iOS" \
+            -derivedDataPath "$RUNNER_TEMP/AirFerryDerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            clean build
+
+      - name: Package unsigned IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="$RUNNER_TEMP/AirFerryDerivedData/Build/Products/Release-iphoneos/AirFerry.app"
+          test -d "$app"
+          package="$RUNNER_TEMP/AirFerryPackage"
+          mkdir -p "$package/Payload"
+          cp -R "$app" "$package/Payload/"
+          ditto -c -k --sequesterRsrc --keepParent \
+            "$package/Payload" \
+            "$GITHUB_WORKSPACE/AirFerry-unsigned.ipa"
+          shasum -a 256 AirFerry-unsigned.ipa > AirFerry-unsigned.sha256
+          file "$app/AirFerry"
+          cat AirFerry-unsigned.sha256
+
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v7
+        with:
+          name: AirFerry-iOS-unsigned-${{ github.run_number }}
+          path: |
+            AirFerry-unsigned.ipa
+            AirFerry-unsigned.sha256
+          if-no-files-found: error
+          retention-days: 14
+

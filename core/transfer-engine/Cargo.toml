@@ -1,0 +1,70 @@
+[package]
+name = "transfer-engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Transfer orchestration, progress, resume, and WASM/JNI bindings for AirFerry."
+
+# Emit a rlib (in-tree/tests), cdylib (WASM/Android/Windows), and staticlib
+# (Apple XCFramework for the native iOS sender + receiver).
+[lib]
+name = "transfer_engine"
+crate-type = ["rlib", "cdylib", "staticlib"]
+
+[dependencies]
+raptorq-core.workspace = true
+qr-protocol.workspace = true
+raptorq = "2.0"
+crc32fast.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# Pin the wasm-bindgen family to versions BEFORE 0.2.93 / js-sys & web-sys 0.3.70.
+# wasm-bindgen 0.2.93 enabled the reference-types proposal (`externref` value
+# type) by default in its generated `.wasm`; that type only ships in Chrome 96+,
+# so the previous loose `"0.2"` / `"0.3"` requirements (resolving to 0.2.125 /
+# 0.3.102) emitted a module that Chrome 87/88 rejects at
+# `WebAssembly.instantiateStreaming()` with
+#   CompileError: invalid value type 'externref'
+# Chrome 87 is the baseline for MV3 extension_pages, so the sender must stay
+# loadable there. Keep the three pinned together: js-sys/web-sys 0.3.69 is the
+# release that accompanied wasm-bindgen 0.2.92.
+#
+# MV3 dual-track: apps/sender/scripts/build-wasm.cjs TEMPORARILY rewrites these
+# three `=0.2.92`/`=0.3.69` pins to `=0.2.125`/`=0.3.102` (a modern, matched
+# triple that enables externref) to build the historically named but scalar
+# `wasm-pkg-simd/` variant for MV3 targets, then restores this file verbatim
+# in `finally` (see build-wasm.cjs). The default checked-in state stays at the
+# legacy pins below so MV2 / `cargo test` / casual `cargo update` never emit
+# externref. Do NOT loosen these to `"0.2"`/`"0.3"` — that would let the
+# default lockfile drift to 0.2.93+ and break the MV2 build.
+#
+# Measured note: +simd128 yielded NO speedup on the current hot path (0.95×,
+# slightly slower) and prevented loading in some hardened/virtualized Chromium
+# environments. Both variants are now scalar; the `simd` directory name is
+# retained for build-path compatibility. The real value of the dual track is
+# MV2/MV3 wasm-bindgen compatibility separation. See AGENTS.md §5 第6条.
+js-sys = "=0.3.69"
+wasm-bindgen = { version = "=0.2.92", optional = true }
+web-sys = { version = "=0.3.69", features = ["console"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+
+[features]
+default = []
+serde = ["dep:serde", "dep:serde_json", "raptorq-core/serde", "qr-protocol/serde"]
+# `wasm` implies `serde`: the wasm bindings (stats_json via serde_json::json!,
+# and the serde-derived ObjectMeta) require it. Express the dependency here so a
+# bare `--features wasm` build works, instead of failing on the compile_error!
+# guard that used to sit next to the call site.
+wasm = ["dep:wasm-bindgen", "serde"]
+jni = []
+# Plain C ABI export (`#[no_mangle] extern "C"`) for Windows P/Invoke and the
+# iOS XCFramework. It adds no host-specific dependency; the crate types above
+# emit a DLL on Windows and a static archive on Apple targets.
+cffi = []

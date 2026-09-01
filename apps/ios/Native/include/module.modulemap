@@ -1,0 +1,5 @@
+module AirFerryCore {
+  header "AirFerryCore.h"
+  export *
+}
+
