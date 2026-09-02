@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct ReceiverView: View {
     @ObservedObject var model: ReceiverViewModel
@@ -70,17 +71,29 @@ struct ReceiverView: View {
         Group {
             switch camera.state {
             case .denied:
-                ContentUnavailableView(
-                    "需要相机权限",
-                    systemImage: "camera.fill",
-                    description: Text("请在“设置 → AirFerry”中允许相机访问。")
-                )
+                VStack(spacing: 14) {
+                    ContentUnavailableView(
+                        "需要相机权限",
+                        systemImage: "camera.fill",
+                        description: Text("请在“设置 → AirFerry”中允许相机访问。")
+                    )
+                    Button("打开系统设置") {
+                        if let url = URL(string: UIApplication.openSettingsURLString) {
+                            UIApplication.shared.open(url)
+                        }
+                    }
+                    .airFerrySecondaryButton()
+                }
             case .failed(let message):
-                ContentUnavailableView(
-                    "相机不可用",
-                    systemImage: "camera.fill",
-                    description: Text(message)
-                )
+                VStack(spacing: 14) {
+                    ContentUnavailableView(
+                        "相机不可用",
+                        systemImage: "camera.fill",
+                        description: Text(message)
+                    )
+                    Button("重新打开相机") { camera.retry() }
+                        .airFerryPrimaryButton()
+                }
             default:
                 CameraPreview(session: camera.session)
                     .overlay { ScannerFrame() }

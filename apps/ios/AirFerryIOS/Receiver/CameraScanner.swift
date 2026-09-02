@@ -1,5 +1,6 @@
 import AVFoundation
 import ImageIO
+import OSLog
 import SwiftUI
 import UIKit
 import Vision
@@ -18,19 +19,48 @@ final class CameraScanner: NSObject, ObservableObject, AVCaptureVideoDataOutputS
 
     private let captureQueue = DispatchQueue(label: "local.airferry.camera.capture", qos: .userInitiated)
     private let visionQueue = DispatchQueue(label: "local.airferry.camera.vision", qos: .userInitiated)
+    private let logger = Logger(subsystem: "local.airferry.ios", category: "CameraScanner")
+    private var runtimeErrorObserver: NSObjectProtocol?
     private var isConfigured = false
     private var lastScanUptime = 0.0
     private var consecutiveVisionFailures = 0
-    private lazy var barcodeRequest: VNDetectBarcodesRequest = {
+    private lazy var barcodeRequest = makeBarcodeRequest()
+
+    override init() {
+        super.init()
+        runtimeErrorObserver = NotificationCenter.default.addObserver(
+            forName: AVCaptureSession.runtimeErrorNotification,
+            object: session,
+            queue: nil
+        ) { [weak self] notification in
+            self?.handleRuntimeError(notification)
+        }
+    }
+
+    deinit {
+        if let runtimeErrorObserver {
+            NotificationCenter.default.removeObserver(runtimeErrorObserver)
+        }
+    }
+
+    private func makeBarcodeRequest() -> VNDetectBarcodesRequest {
         let request = VNDetectBarcodesRequest()
         request.symbologies = [.qr]
-        if #available(iOS 26.0, *) {
-            // iOS 26 的部分 iPhone 16 设备存在 Vision/ANE 条码模型失效问题。
-            // 二维码解码量不大，接收页优先使用 CPU，避免系统模型异常拖垮扫码链路。
-            request.usesCPUOnly = true
-        }
+        request.revision = VNDetectBarcodesRequestRevision3
         return request
-    }()
+    }
+
+    private func handleRuntimeError(_ notification: Notification) {
+        let error = notification.userInfo?[AVCaptureSessionErrorKey] as? AVError
+        logger.error("Capture session runtime error: \(error?.localizedDescription ?? "unknown", privacy: .public)")
+        if error?.code == .mediaServicesWereReset {
+            configureAndRun(forceReconfigure: true)
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                self?.state = .failed("系统相机服务暂时不可用，请点击重新打开相机。")
+            }
+        }
+    }
 
     func start() {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
@@ -53,9 +83,17 @@ final class CameraScanner: NSObject, ObservableObject, AVCaptureVideoDataOutputS
         }
     }
 
-    private func configureAndRun() {
+    func retry() {
+        configureAndRun(forceReconfigure: true)
+    }
+
+    private func configureAndRun(forceReconfigure: Bool = false) {
         captureQueue.async { [weak self] in
             guard let self else { return }
+            if forceReconfigure {
+                if session.isRunning { session.stopRunning() }
+                isConfigured = false
+            }
             if let message = configureSessionIfNeeded() {
                 DispatchQueue.main.async { self.state = .failed(message) }
                 return
@@ -84,13 +122,21 @@ final class CameraScanner: NSObject, ObservableObject, AVCaptureVideoDataOutputS
             session.sessionPreset = .high
         }
 
-        guard
-            let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
-            let input = try? AVCaptureDeviceInput(device: camera),
-            session.canAddInput(input)
-        else {
+        guard let camera = AVCaptureDevice.default(
+            .builtInWideAngleCamera,
+            for: .video,
+            position: .back
+        ) else {
             return "无法打开后置摄像头。"
         }
+
+        let input: AVCaptureDeviceInput
+        do {
+            input = try AVCaptureDeviceInput(device: camera)
+        } catch {
+            return "无法连接摄像头：\(error.localizedDescription)"
+        }
+        guard session.canAddInput(input) else { return "系统拒绝添加摄像头输入。" }
 
         session.addInput(input)
         let output = AVCaptureVideoDataOutput()
@@ -144,10 +190,10 @@ final class CameraScanner: NSObject, ObservableObject, AVCaptureVideoDataOutputS
                 consecutiveVisionFailures = 0
             } catch {
                 consecutiveVisionFailures += 1
-                if consecutiveVisionFailures == 24 {
-                    DispatchQueue.main.async { [weak self] in
-                        self?.state = .failed("系统扫码引擎连续失败，请重启 iPhone 后再试。")
-                    }
+                logger.error("Vision QR detection failed: \(error.localizedDescription, privacy: .public)")
+                if consecutiveVisionFailures >= 3 {
+                    barcodeRequest = makeBarcodeRequest()
+                    consecutiveVisionFailures = 0
                 }
                 return
             }
