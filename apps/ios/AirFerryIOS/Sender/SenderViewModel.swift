@@ -24,8 +24,9 @@ enum SenderSpeed: String, CaseIterable, Identifiable {
     }
     var framesPerSecond: Int {
         switch self {
-        case .stable: 24
-        case .fast, .aggressive: 30
+        case .stable: 15
+        case .fast: 20
+        case .aggressive: 24
         }
     }
 }
@@ -69,7 +70,7 @@ final class SenderViewModel: ObservableObject {
     }
 
     @Published var phase: Phase = .idle
-    @Published var speed: SenderSpeed = .aggressive
+    @Published var speed: SenderSpeed = .fast
     @Published var codesPerTick = 1
     @Published private(set) var filename = ""
     @Published private(set) var fileSize: UInt64 = 0

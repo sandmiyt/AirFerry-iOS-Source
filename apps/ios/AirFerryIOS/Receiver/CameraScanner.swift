@@ -116,7 +116,12 @@ final class CameraScanner: NSObject, ObservableObject, AVCaptureVideoDataOutputS
 
         session.inputs.forEach(session.removeInput)
         session.outputs.forEach(session.removeOutput)
-        if session.canSetSessionPreset(.hd1280x720) {
+        // Dense binary QR symbols need more source pixels than ordinary URL
+        // codes. Prefer 1080p and fall back only on devices that cannot supply
+        // it; 720p made V22/V27 streams look valid in preview but undecodable.
+        if session.canSetSessionPreset(.hd1920x1080) {
+            session.sessionPreset = .hd1920x1080
+        } else if session.canSetSessionPreset(.hd1280x720) {
             session.sessionPreset = .hd1280x720
         } else {
             session.sessionPreset = .high
@@ -174,7 +179,10 @@ final class CameraScanner: NSObject, ObservableObject, AVCaptureVideoDataOutputS
         from connection: AVCaptureConnection
     ) {
         let now = ProcessInfo.processInfo.systemUptime
-        guard now - lastScanUptime >= 1.0 / 12.0,
+        // The delegate queue is serial and late video frames are discarded, so
+        // Vision already provides natural back-pressure. A 30 Hz ceiling gives
+        // the scanner more clean-frame opportunities without queue buildup.
+        guard now - lastScanUptime >= 1.0 / 30.0,
               let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer)
         else { return }
         lastScanUptime = now
